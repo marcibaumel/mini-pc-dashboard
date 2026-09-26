@@ -15,3 +15,15 @@ export function usageColor(percent: number): string {
     if (percent >= 75) return "bg-amber-500";
     return "bg-emerald-500";
 }
+
+export function formatUptime(seconds: number): string {
+    const totalMinutes = Math.floor(Math.max(0, seconds) / 60);
+    const days = Math.floor(totalMinutes / (24 * 60));
+    const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0 || days > 0) parts.push(`${hours}h`);
+    parts.push(`${minutes}m`);
+    return parts.join(" ");
+}

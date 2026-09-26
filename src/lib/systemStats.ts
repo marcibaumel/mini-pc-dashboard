@@ -1,11 +1,15 @@
 import { execFile } from "node:child_process";
-import { hostname, platform } from "node:os";
+import { hostname, networkInterfaces, platform } from "node:os";
+import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import type {
     BlockDevice,
     FilesystemInfo,
+    NetworkAddress,
+    RunningService,
     StorageReport,
     StorageSummary,
+    SystemInfo,
 } from "@/types/storage";
 
 const execFileAsync = promisify(execFile);
@@ -83,9 +87,7 @@ async function collectDisks(): Promise<BlockDevice[]> {
         "NAME,PATH,SIZE,TYPE,MODEL,TRAN,ROTA,FSTYPE,MOUNTPOINT",
     ]);
     const parsed = JSON.parse(stdout) as { blockdevices: LsblkDevice[] };
-    return parsed.blockdevices
-        .filter((d) => d.type === "disk")
-        .map(mapDevice);
+    return parsed.blockdevices.filter((d) => d.type === "disk").map(mapDevice);
 }
 
 async function collectFilesystems(): Promise<FilesystemInfo[]> {
@@ -97,8 +99,15 @@ async function collectFilesystems(): Promise<FilesystemInfo[]> {
     for (const line of lines) {
         const parts = line.trim().split(/\s+/);
         if (parts.length < 7) continue;
-        const [filesystem, fstype, sizeStr, usedStr, availStr, , ...mountParts] =
-            parts;
+        const [
+            filesystem,
+            fstype,
+            sizeStr,
+            usedStr,
+            availStr,
+            ,
+            ...mountParts
+        ] = parts;
         const mountpoint = mountParts.join(" ");
 
         if (IGNORED_FSTYPES.has(fstype)) continue;
@@ -123,6 +132,68 @@ async function collectFilesystems(): Promise<FilesystemInfo[]> {
     return filesystems;
 }
 
+async function collectUptime(): Promise<number> {
+    const contents = await readFile("/proc/uptime", "utf8");
+    const uptimeSeconds = Number(contents.trim().split(/\s+/)[0]);
+    return Number.isFinite(uptimeSeconds) ? uptimeSeconds : 0;
+}
+
+function collectNetworkAddresses(): NetworkAddress[] {
+    return Object.entries(networkInterfaces()).flatMap(
+        ([interfaceName, addresses]) =>
+            (addresses ?? [])
+                .filter((address) => !address.internal)
+                .map((address) => ({
+                    interface: interfaceName,
+                    address: address.address,
+                    family: address.family as "IPv4" | "IPv6",
+                })),
+    );
+}
+
+async function collectServices(): Promise<{
+    services: RunningService[];
+    available: boolean;
+}> {
+    try {
+        const { stdout } = await execFileAsync("systemctl", [
+            "list-units",
+            "--type=service",
+            "--state=running",
+            "--no-legend",
+            "--no-pager",
+        ]);
+        const services = stdout
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((line) =>
+                line.trim().match(/^(\S+)\s+\S+\s+\S+\s+\S+\s+(.*)$/),
+            )
+            .filter((match): match is RegExpMatchArray => match !== null)
+            .map((match) => ({
+                name: match[1].replace(/\.service$/, ""),
+                description: match[2],
+            }));
+        return { services, available: true };
+    } catch {
+        return { services: [], available: false };
+    }
+}
+
+async function collectSystemInfo(): Promise<SystemInfo> {
+    const [uptimeSeconds, servicesResult] = await Promise.all([
+        collectUptime(),
+        collectServices(),
+    ]);
+    return {
+        uptimeSeconds,
+        networkAddresses: collectNetworkAddresses(),
+        services: servicesResult.services,
+        servicesAvailable: servicesResult.available,
+    };
+}
+
 function summarize(filesystems: FilesystemInfo[]): StorageSummary {
     // Avoid double-counting the same device mounted more than once (e.g. bind mounts).
     const seen = new Set<string>();
@@ -143,7 +214,9 @@ function summarize(filesystems: FilesystemInfo[]): StorageSummary {
         usedBytes,
         availableBytes,
         usedPercent:
-            totalBytes > 0 ? Math.round((usedBytes / totalBytes) * 1000) / 10 : 0,
+            totalBytes > 0
+                ? Math.round((usedBytes / totalBytes) * 1000) / 10
+                : 0,
     };
 }
 
@@ -242,6 +315,21 @@ function buildMockReport(): StorageReport {
         summary: summarize(filesystems),
         filesystems,
         disks,
+        system: {
+            uptimeSeconds: 3 * 24 * 60 * 60 + 7 * 60 * 60 + 24 * 60 + 18,
+            networkAddresses: [
+                { interface: "eth0", address: "192.168.1.42", family: "IPv4" },
+            ],
+            services: [
+                { name: "ssh", description: "OpenBSD Secure Shell server" },
+                {
+                    name: "docker",
+                    description: "Docker Application Container Engine",
+                },
+                { name: "nginx", description: "A high performance web server" },
+            ],
+            servicesAvailable: true,
+        },
     };
 }
 
@@ -251,9 +339,10 @@ export async function getStorageReport(): Promise<StorageReport> {
     }
 
     try {
-        const [disks, filesystems] = await Promise.all([
+        const [disks, filesystems, system] = await Promise.all([
             collectDisks(),
             collectFilesystems(),
+            collectSystemInfo(),
         ]);
 
         return {
@@ -264,9 +353,13 @@ export async function getStorageReport(): Promise<StorageReport> {
             summary: summarize(filesystems),
             filesystems,
             disks,
+            system,
         };
     } catch (error) {
-        console.error("Failed to collect real storage data, falling back to mock data:", error);
+        console.error(
+            "Failed to collect real storage data, falling back to mock data:",
+            error,
+        );
         return buildMockReport();
     }
 }

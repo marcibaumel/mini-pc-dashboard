@@ -28,6 +28,24 @@ export interface StorageSummary {
     usedPercent: number;
 }
 
+export interface NetworkAddress {
+    interface: string;
+    address: string;
+    family: "IPv4" | "IPv6";
+}
+
+export interface RunningService {
+    name: string;
+    description: string;
+}
+
+export interface SystemInfo {
+    uptimeSeconds: number;
+    networkAddresses: NetworkAddress[];
+    services: RunningService[];
+    servicesAvailable: boolean;
+}
+
 export interface StorageReport {
     hostname: string;
     platform: string;
@@ -36,4 +54,5 @@ export interface StorageReport {
     summary: StorageSummary;
     filesystems: FilesystemInfo[];
     disks: BlockDevice[];
+    system: SystemInfo;
 }

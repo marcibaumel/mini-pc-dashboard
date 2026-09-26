@@ -4,9 +4,9 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 - `GET /api/storage` runs `lsblk` and `df` on the host and returns disk/filesystem usage as JSON.
 - The dashboard (`/`) polls that endpoint every 15 seconds and renders:
-  - Total/used/free capacity summary cards
-  - Per-mount usage bars (`/`, external drives, etc.)
-  - A tree of physical disks and their partitions (model, transport, size)
+    - Total/used/free capacity summary cards
+    - Per-mount usage bars (`/`, external drives, etc.)
+    - A tree of physical disks and their partitions (model, transport, size)
 - On non-Linux machines (e.g. this dev machine on Windows), or if `lsblk`/`df` aren't available, it falls back to sample data so the UI can still be developed/previewed.
 
 ## Getting Started
@@ -19,16 +19,27 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+To make the development server reachable by other devices on the same network, run:
+
+```bash
+npm run dev:network
+```
+
+Find the mini PC's LAN address with `hostname -I`, then open `http://<mini-pc-ip>:3000` from another device.
+
 ## Deploying on the mini PC (Ubuntu)
 
 1. Copy this project to the mini PC and install dependencies: `npm install`
 2. Build for production: `npm run build`
-3. Start it: `npm start` (defaults to port 3000)
-4. Optionally run it as a systemd service or with `pm2` so it survives reboots, e.g.:
+3. Start it locally: `npm start` (defaults to port 3000), or expose it to the LAN with `npm run start:network`.
+4. To start it automatically when the mini PC boots, install the included systemd service:
 
 ```bash
-pm2 start npm --name mini-pc-dashboard -- start
-pm2 save
+sudo cp mini-pc-dashboard.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now mini-pc-dashboard
 ```
+
+Check its status with `systemctl status mini-pc-dashboard`. The service is configured for this project path and the current NVM Node path; update `User`, `WorkingDirectory`, `PATH`, and `ExecStart` in `mini-pc-dashboard.service` if those paths differ on another machine.
 
 No extra permissions are required — `lsblk` and `df` are readable by any user.
