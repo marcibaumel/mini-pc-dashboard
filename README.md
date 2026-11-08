@@ -7,6 +7,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
     - Total/used/free capacity summary cards
     - Per-mount usage bars (`/`, external drives, etc.)
     - A tree of physical disks and their partitions (model, transport, size)
+- The system overview lists running project servers detected by Linux `ss` on TCP ports 3000–3099.
 - On non-Linux machines (e.g. this dev machine on Windows), or if `lsblk`/`df` aren't available, it falls back to sample data so the UI can still be developed/previewed.
 
 ## Getting Started
@@ -32,7 +33,7 @@ Find the mini PC's LAN address with `hostname -I`, then open `http://<mini-pc-ip
 1. Copy this project to the mini PC and install dependencies: `npm install`
 2. Build for production: `npm run build`
 3. Start it locally: `npm start` (defaults to port 3000), or expose it to the LAN with `npm run start:network`.
-4. To start it automatically when the mini PC boots, install the included systemd service:
+4. To start it automatically when the mini PC boots, install the optional, machine-specific `mini-pc-dashboard.service` file (kept locally and excluded from Git):
 
 ```bash
 sudo cp mini-pc-dashboard.service /etc/systemd/system/

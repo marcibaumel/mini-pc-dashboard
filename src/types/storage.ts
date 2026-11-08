@@ -39,11 +39,20 @@ export interface RunningService {
     description: string;
 }
 
+export interface RunningProject {
+    name: string;
+    port: number;
+    process: string;
+    pid: number | null;
+}
+
 export interface SystemInfo {
     uptimeSeconds: number;
     networkAddresses: NetworkAddress[];
     services: RunningService[];
     servicesAvailable: boolean;
+    projects: RunningProject[];
+    projectsAvailable: boolean;
 }
 
 export interface StorageReport {

@@ -1,11 +1,13 @@
 import { execFile } from "node:child_process";
 import { hostname, networkInterfaces, platform } from "node:os";
-import { readFile } from "node:fs/promises";
+import { readFile, readlink } from "node:fs/promises";
+import { basename } from "node:path";
 import { promisify } from "node:util";
 import type {
     BlockDevice,
     FilesystemInfo,
     NetworkAddress,
+    RunningProject,
     RunningService,
     StorageReport,
     StorageSummary,
@@ -181,16 +183,66 @@ async function collectServices(): Promise<{
     }
 }
 
+async function collectRunningProjects(): Promise<{
+    projects: RunningProject[];
+    available: boolean;
+}> {
+    try {
+        const { stdout } = await execFileAsync("ss", ["-H", "-ltnp"]);
+        const projectsByListener = new Map<string, RunningProject>();
+        const lines = stdout.trim().split("\n").filter(Boolean);
+
+        for (const line of lines) {
+            const columns = line.trim().split(/\s+/);
+            const port = Number(columns[3]?.match(/:(\d+)$/)?.[1]);
+            if (!Number.isInteger(port) || port < 3000 || port > 3099) {
+                continue;
+            }
+
+            const processMatch = line.match(
+                /users:\(\("([^"]+)",pid=(\d+)/,
+            );
+            const process = processMatch?.[1] ?? "Unknown process";
+            const pid = processMatch ? Number(processMatch[2]) : null;
+            let name = process;
+
+            if (pid !== null) {
+                try {
+                    name = basename(await readlink(`/proc/${pid}/cwd`));
+                } catch {
+                    // The listener may belong to another user or have exited.
+                }
+            }
+
+            const key = `${port}:${pid ?? process}`;
+            if (!projectsByListener.has(key)) {
+                projectsByListener.set(key, { name, port, process, pid });
+            }
+        }
+
+        const projects = [...projectsByListener.values()].sort(
+            (a, b) => a.port - b.port || a.name.localeCompare(b.name),
+        );
+        return { projects, available: true };
+    } catch (error) {
+        console.error("Failed to collect running projects:", error);
+        return { projects: [], available: false };
+    }
+}
+
 async function collectSystemInfo(): Promise<SystemInfo> {
-    const [uptimeSeconds, servicesResult] = await Promise.all([
+    const [uptimeSeconds, servicesResult, projectsResult] = await Promise.all([
         collectUptime(),
         collectServices(),
+        collectRunningProjects(),
     ]);
     return {
         uptimeSeconds,
         networkAddresses: collectNetworkAddresses(),
         services: servicesResult.services,
         servicesAvailable: servicesResult.available,
+        projects: projectsResult.projects,
+        projectsAvailable: projectsResult.available,
     };
 }
 
@@ -329,6 +381,8 @@ function buildMockReport(): StorageReport {
                 { name: "nginx", description: "A high performance web server" },
             ],
             servicesAvailable: true,
+            projects: [],
+            projectsAvailable: false,
         },
     };
 }
